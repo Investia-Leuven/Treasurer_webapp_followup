@@ -1,0 +1,212 @@
+import streamlit as st
+import pandas as pd
+from supabase import create_client
+import os
+import yfinance as yf
+
+def display_header():
+    """Display the app header with logo and title."""
+    st.markdown(
+        """
+        <style>
+        .header-container {
+            display: flex;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            background-color: white;
+            padding: 10px 0;
+            border-bottom: 1px solid #ddd;
+            z-index: 1000;
+        }
+        .header-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            flex-grow: 1;
+            margin-right: 60px;
+        }
+        .block-container {
+            padding-top: 60px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    col1, col2, col3 = st.columns([1, 6, 1])
+    with col1:
+        st.image("logoinvestia.png", width=80)
+    with col2:
+        st.markdown(
+            "<div class='header-title'>Investia - Stock alert manager (bèta)</div>",
+            unsafe_allow_html=True
+        )
+    with col3:
+        st.empty()
+
+def display_footer():
+    """Display sticky footer."""
+    st.markdown("""
+        <style>
+        .footer {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            text-align: center;
+            background-color: white;
+            padding: 10px;
+            font-size: 0.85em;
+            color: grey;
+            z-index: 100;
+            border-top: 1px solid #ddd;
+        }
+        </style>
+        <div class="footer">
+            <i>This is a bèta version. All rights reserved by Investia. 
+            Suggestions or errors can be reported to Vince Coppens.</i>
+        </div>
+    """, unsafe_allow_html=True)
+
+def insert_stock(ticker, bear, bau, bull, pro_list, contra_list, email, supabase):
+    """Insert a stock into the database."""
+    data = {
+        "ticker": ticker,
+        "bear_price": bear,
+        "bau_price": bau,
+        "bull_price": bull,
+        "pro_1": pro_list[0] if len(pro_list) > 0 else "",
+        "pro_2": pro_list[1] if len(pro_list) > 1 else "",
+        "pro_3": pro_list[2] if len(pro_list) > 2 else "",
+        "contra_1": contra_list[0] if len(contra_list) > 0 else "",
+        "contra_2": contra_list[1] if len(contra_list) > 1 else "",
+        "contra_3": contra_list[2] if len(contra_list) > 2 else "",
+        "email": email
+    }
+    supabase.table("stock_watchlist").insert(data).execute()
+
+def get_all_stocks(supabase):
+    """Return a DataFrame of all stocks, ticker first, 1-based index."""
+    response = supabase.table("stock_watchlist").select("*").execute()
+    df = pd.DataFrame(response.data)
+    if not df.empty:
+        cols = df.columns.tolist()
+        if "ticker" in cols:
+            cols = ["ticker"] + [col for col in cols if col != "ticker"]
+            df = df[cols]
+        df.index = df.index + 1
+    return df
+
+def update_stock(selected_ticker, update_data, supabase):
+    """Update a stock entry identified by selected_ticker."""
+    supabase.table("stock_watchlist").update(update_data).eq("ticker", selected_ticker).execute()
+
+def delete_stock(selected_ticker, supabase):
+    """Delete a stock entry identified by selected_ticker."""
+    supabase.table("stock_watchlist").delete().eq("ticker", selected_ticker).execute()
+
+def main():
+    st.set_page_config(page_title="Investia Stock Alert", layout="wide")
+    display_header()
+    display_footer()
+
+    # --- Load Supabase ---
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    # --- Inputs pulled out of form for live update ---
+    ticker = st.text_input("Ticker")
+    ticker = ticker.upper()
+    if ticker.strip() != "":
+        try:
+            ticker_info = yf.Ticker(ticker)
+            hist = ticker_info.history(period="1d")
+            if not hist.empty:
+                st.success(f"{ticker} is a valid ticker symbol.")
+            else:
+                st.warning("Ticker not found. Please enter a valid ticker symbol.")
+        except Exception as e:
+            st.error(f"Error validating ticker: {e}")
+    bear = st.number_input("Bear Case", value=0.0)
+    bau = st.number_input("Base Case (BAU)", value=0.0)
+    bull = st.number_input("Bull Case", value=0.0)
+
+    st.write("**Investment Thesis**")
+    pro_1 = st.text_input("Pro 1")
+    pro_2 = st.text_input("Pro 2")
+    pro_3 = st.text_input("Pro 3")
+    contra_1 = st.text_input("Contra 1")
+    contra_2 = st.text_input("Contra 2")
+    contra_3 = st.text_input("Contra 3")
+    email = st.text_input("Email", value="default@email.com")
+
+    if st.button("Add Stock"):
+        if ticker.strip() == "":
+            st.warning("Ticker cannot be empty. Please enter a valid ticker.")
+        else:
+            # Check if ticker already exists
+            exists_response = supabase.table("stock_watchlist").select("ticker").eq("ticker", ticker).execute()
+            if exists_response.data and len(exists_response.data) > 0:
+                st.warning(f"{ticker} already exists in the watchlist. Please use a different ticker.")
+            else:
+                pro_list = [pro_1, pro_2, pro_3]
+                contra_list = [contra_1, contra_2, contra_3]
+                insert_stock(ticker, bear, bau, bull, pro_list, contra_list, email, supabase)
+                st.success(f"{ticker} added successfully!")
+
+    # --- Display DataFrame ---
+    df = get_all_stocks(supabase)
+    st.dataframe(df)
+
+    if not df.empty:
+        with st.expander("Edit or Delete Stock Entry", expanded=False):
+            selected_ticker = st.selectbox("Select Ticker to edit/delete", df["ticker"].tolist())
+            selected_row = df[df["ticker"] == selected_ticker].iloc[0]
+
+            # Editable fields for all columns
+            edit_ticker = st.text_input("Ticker", value=selected_row["ticker"], key="edit_ticker")
+            if edit_ticker != selected_ticker:
+                st.warning("You are changing the primary key (Ticker). Be careful with this change.")
+            edit_bear = st.number_input("Bear Case", value=float(selected_row["bear_price"]), key="edit_bear")
+            edit_bau = st.number_input("Base Case (BAU)", value=float(selected_row["bau_price"]), key="edit_bau")
+            edit_bull = st.number_input("Bull Case", value=float(selected_row["bull_price"]), key="edit_bull")
+            st.write("**Investment Thesis**")
+            edit_pro_1 = st.text_input("Pro 1", value=selected_row.get("pro_1", ""), key="edit_pro_1")
+            edit_pro_2 = st.text_input("Pro 2", value=selected_row.get("pro_2", ""), key="edit_pro_2")
+            edit_pro_3 = st.text_input("Pro 3", value=selected_row.get("pro_3", ""), key="edit_pro_3")
+            edit_contra_1 = st.text_input("Contra 1", value=selected_row.get("contra_1", ""), key="edit_contra_1")
+            edit_contra_2 = st.text_input("Contra 2", value=selected_row.get("contra_2", ""), key="edit_contra_2")
+            edit_contra_3 = st.text_input("Contra 3", value=selected_row.get("contra_3", ""), key="edit_contra_3")
+            edit_email = st.text_input("Email", value=selected_row.get("email", ""), key="edit_email")
+
+            message = None
+            col1, col2, _ = st.columns([1, 1, 7])
+            with col1:
+                if st.button("Update Stock"):
+                    update_data = {
+                        "ticker": edit_ticker,
+                        "bear_price": edit_bear,
+                        "bau_price": edit_bau,
+                        "bull_price": edit_bull,
+                        "pro_1": edit_pro_1,
+                        "pro_2": edit_pro_2,
+                        "pro_3": edit_pro_3,
+                        "contra_1": edit_contra_1,
+                        "contra_2": edit_contra_2,
+                        "contra_3": edit_contra_3,
+                        "email": edit_email,
+                    }
+                    update_stock(selected_ticker, update_data, supabase)
+                    message = ("success", "Stock updated successfully! Please refresh to see changes.")
+            with col2:
+                if st.button("Delete Stock"):
+                    delete_stock(selected_ticker, supabase)
+                    message = ("warning", "Stock deleted successfully! Please refresh to see changes.")
+            if message:
+                getattr(st, message[0])(message[1])
+
+if __name__ == "__main__":
+    main()
