@@ -92,6 +92,8 @@ def get_all_stocks(supabase):
     response = supabase.table("stock_watchlist").select("*").execute()
     df = pd.DataFrame(response.data)
     if not df.empty:
+        # Drop columns containing 'date', 'time', or 'created_at'
+        df = df.loc[:, ~df.columns.str.contains('date|time|created_at', case=False)]
         cols = df.columns.tolist()
         if "ticker" in cols:
             cols = ["ticker"] + [col for col in cols if col != "ticker"]
@@ -110,6 +112,11 @@ def delete_stock(selected_ticker, supabase):
 def main():
     st.set_page_config(page_title="Investia Stock Alert", layout="wide")
     display_header()
+    st.markdown("")
+    st.markdown(
+        "<p style='color:darkblue;'>This web page allows to manage your our watchlist, set price alerts, and configure a mailing list to receive notifications when a bear or bull case is reached or when a share price changes significantly.</p>",
+        unsafe_allow_html=True
+    )
     display_footer()
 
     # --- Load Supabase ---
@@ -207,6 +214,39 @@ def main():
                     message = ("warning", "Stock deleted successfully! Please refresh to see changes.")
             if message:
                 getattr(st, message[0])(message[1])
+
+    with st.expander("Manage Mailing List", expanded=False):
+        st.write("All emails in this list will receive alerts in addition to the stock-specific email set above.")
+
+        new_email = st.text_input("New Email")
+        if st.button("Add Email"):
+            if new_email.strip() == "":
+                st.warning("Email cannot be empty.")
+            else:
+                # Check if email already exists
+                exists_response = supabase.table("mailing_list").select("email").eq("email", new_email).execute()
+                if exists_response.data and len(exists_response.data) > 0:
+                    st.warning(f"{new_email} already exists in the mailing list.")
+                else:
+                    supabase.table("mailing_list").insert({"email": new_email}).execute()
+                    st.success(f"{new_email} added to mailing list.")
+
+        # Fetch and display mailing list
+        mailing_response = supabase.table("mailing_list").select("*").execute()
+        mailing_df = pd.DataFrame(mailing_response.data)
+        if not mailing_df.empty:
+            # Drop columns containing 'date', 'time', or 'created_at'
+            mailing_df = mailing_df.loc[:, ~mailing_df.columns.str.contains('date|time|created_at', case=False)]
+            mailing_df.index = mailing_df.index + 1
+        if mailing_df.empty:
+            st.write("Mailing list is empty.")
+        else:
+            st.dataframe(mailing_df)
+
+            email_to_delete = st.selectbox("Select Email to delete", mailing_df["email"].tolist())
+            if st.button("Delete Email"):
+                supabase.table("mailing_list").delete().eq("email", email_to_delete).execute()
+                st.warning(f"{email_to_delete} deleted from mailing list.")
 
 if __name__ == "__main__":
     main()
