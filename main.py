@@ -14,7 +14,7 @@ SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 EMAIL_USER = os.environ.get('EMAIL_USER')
 EMAIL_PASS = os.environ.get('EMAIL_PASS')
 
-DAILY_CHANGE_THRESHOLD = 0.1  # percentage threshold for daily change notifications
+DAILY_CHANGE_THRESHOLD = 3  # percentage threshold for daily change notifications
 
 # Initialize Supabase client
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
