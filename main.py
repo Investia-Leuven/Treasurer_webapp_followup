@@ -1,20 +1,18 @@
 # Backend alert script for stock price threshold notifications
 import os
-from dotenv import load_dotenv
 import yfinance as yf
 import smtplib
 from email.mime.text import MIMEText
 from supabase import create_client
 from datetime import datetime, timezone
+import json
+from config import SUPABASE_URL, SUPABASE_KEY, EMAIL_USER, EMAIL_PASS, DAILY_CHANGE_THRESHOLD, SMTP_HOST, SMTP_PORT
+from email_template import prepare_email_body
 
-# Load environment variables
-load_dotenv()
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
-EMAIL_USER = os.environ.get('EMAIL_USER')
-EMAIL_PASS = os.environ.get('EMAIL_PASS')
-
-DAILY_CHANGE_THRESHOLD = 3  # percentage threshold for daily change notifications
+def log_event(level, message, **context):
+    log = {"level": level, "message": message}
+    log.update(context)
+    print(json.dumps(log))
 
 # Initialize Supabase client
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -25,53 +23,12 @@ def send_email(to_email, subject, body):
     msg['From'] = EMAIL_USER
     msg['To'] = to_email
     try:
-        with smtplib.SMTP('smtp-auth.mailprotect.be', 587) as server:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
             server.starttls()
             server.login(EMAIL_USER, EMAIL_PASS)
             server.sendmail(EMAIL_USER, [to_email], msg.as_string())
     except Exception as e:
-        print(f"Failed to send email to {to_email}: {e}")
-
-def prepare_email_body(ticker, event_message, bear_price, bau_price, bull_price, pro_1, pro_2, pro_3, contra_1, contra_2, contra_3, news_items):
-    news_html = ""
-    if news_items:
-        news_html += "<h3>Latest News:</h3><ul>"
-        for item in news_items:
-            title = item.get('title', 'No title')
-            url = item.get('canonicalUrl', '#')
-            news_html += f'<li><a href="{url}" target="_blank" rel="noopener noreferrer">{title}</a></li>'
-        news_html += "</ul>"
-    return f"""<html>
-  <body>
-    <p>Dear member,</p>
-    <p>This is an alert from the <strong>Investia Bot</strong> regarding the stock <strong>{ticker}</strong>.</p>
-    <p>Reason for this email: <em>{event_message}</em>.</p>
-    <h3>Price Levels:</h3>
-    <ul>
-      <li>Bear price: {bear_price}</li>
-      <li>BAU price: {bau_price}</li>
-      <li>Bull price: {bull_price}</li>
-    </ul>
-    <h3>Investment Thesis:</h3>
-    <p><strong>Pros:</strong></p>
-    <ul>
-      <li>{pro_1}</li>
-      <li>{pro_2}</li>
-      <li>{pro_3}</li>
-    </ul>
-    <p><strong>Cons:</strong></p>
-    <ul>
-      <li>{contra_1}</li>
-      <li>{contra_2}</li>
-      <li>{contra_3}</li>
-    </ul>
-    <p>This event may be related to recent news or market movements.</p>
-    {news_html}
-    <p>Have a nice day!</p>
-    <p>Kind regards,<br>The Investia bot</p>
-  </body>
-</html>
-"""
+        log_event("ERROR", f"Failed to send email to {to_email}", error=str(e))
 
 def notify_event(ticker, event_message, row, mailing_emails):
     subject = f"!! Check {ticker} | Investia bot"
@@ -89,16 +46,19 @@ def notify_event(ticker, event_message, row, mailing_emails):
     news_items = []
     try:
         stock = yf.Ticker(ticker)
-        news = stock.news
-        if news and isinstance(news, list):
-            for item in news[:3]:
-                content = item.get('content', {})
-                title = content.get('title')
-                url = content.get('canonicalUrl', {}).get('url')
-                if title and url:
-                    news_items.append({'title': title, 'canonicalUrl': url})
+        raw_news = stock.news or []
+        for item in raw_news[:3]:
+            title = item.get("title") or item.get("content", {}).get("title")
+            url = (item.get("link")
+                   or item.get("url")
+                   or item.get("canonicalUrl")
+                   or item.get("content", {}).get("canonicalUrl", {}))
+            if isinstance(url, dict):
+                url = url.get("url")
+            if title and url:
+                news_items.append({"title": title, "canonicalUrl": url})
     except Exception as e:
-        print(f"Error fetching news for {ticker}: {e}")
+        log_event("ERROR", "Failed to fetch news", ticker=ticker, error=str(e))
 
     body = prepare_email_body(ticker, event_message, bear_price, bau_price, bull_price, pro_1, pro_2, pro_3, contra_1, contra_2, contra_3, news_items)
     recipients = set(mailing_emails)
@@ -113,7 +73,7 @@ def fetch_mailing_emails():
         mailing_response = supabase.table('mailing_list').select('email').execute()
         return [entry['email'] for entry in mailing_response.data if entry.get('email')]
     except Exception as e:
-        print(f"Error fetching mailing list: {e}")
+        log_event("ERROR", "Failed to fetch mailing list", error=str(e))
         return []
 
 def fetch_watchlist():
@@ -125,7 +85,7 @@ def fetch_watchlist():
             updated_at_exists = True
         return rows, updated_at_exists
     except Exception as e:
-        print(f"Error fetching watchlist: {e}")
+        log_event("ERROR", "Failed to fetch watchlist", error=str(e))
         return [], False
 
 def process_row(row, mailing_emails, updated_at_exists, now_utc):
@@ -155,7 +115,7 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
                 if 'notified_bull' in reset_fields:
                     notified_bull = False
         except Exception as e:
-            print(f"Error parsing updated_at for {ticker}: {e}")
+            log_event("ERROR", "Failed to parse updated_at", ticker=ticker, error=str(e))
     elif not updated_at_exists:
         # If updated_at column does not exist, no reset is performed.
         # To enable automatic reset, add an 'updated_at' timestamp column to the 'stock_watchlist' table
@@ -164,19 +124,23 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
 
     try:
         stock = yf.Ticker(ticker)
+        if not stock.info or stock.info.get("regularMarketPrice") is None:
+            log_event("WARN", "Ticker invalid or delisted", ticker=ticker)
+            return
         hist = stock.history(period="2d")
         if hist.empty or len(hist) < 2:
-            print(f"No sufficient data for {ticker}")
+            log_event("WARN", "No sufficient historical data", ticker=ticker)
             return
         last_close = hist['Close'][-1]
+        price_str = f"{last_close:,.2f}"
         previous_close = hist['Close'][-2]
         # Check bear threshold
         if bear_price is not None and last_close <= bear_price and not notified_bear:
-            notify_event(ticker, "Bear case hit", row, mailing_emails)
+            notify_event(ticker, f"Bear case hit (close: {price_str})", row, mailing_emails)
             supabase.table('stock_watchlist').update({'notified_bear': True}).eq('ticker', ticker).execute()
         # Check bull threshold
         if bull_price is not None and last_close >= bull_price and not notified_bull:
-            notify_event(ticker, "Bull case hit", row, mailing_emails)
+            notify_event(ticker, f"Bull case hit (close: {price_str})", row, mailing_emails)
             supabase.table('stock_watchlist').update({'notified_bull': True}).eq('ticker', ticker).execute()
 
         # --- Begin new daily change notification logic ---
@@ -198,31 +162,33 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
                 supabase.table('stock_watchlist').update({'notified_daily_change': False}).eq('ticker', ticker).execute()
                 notified_daily_change = False
             except Exception as e:
-                print(f"Error resetting notified_daily_change for {ticker}: {e}")
+                log_event("ERROR", "Reset daily notification failed", ticker=ticker, error=str(e))
 
         # Now check daily change
         if previous_close != 0:
             daily_change = (last_close - previous_close) / previous_close * 100
-            # Only notify if daily change >= DAILY_CHANGE_THRESHOLD% or <= -DAILY_CHANGE_THRESHOLD% and not notified today
-            if (daily_change >= DAILY_CHANGE_THRESHOLD or daily_change <= -DAILY_CHANGE_THRESHOLD):
+            threshold = row.get('daily_change_threshold', DAILY_CHANGE_THRESHOLD)
+            # Only notify if daily change >= threshold% or <= -threshold% and not notified today
+            if (daily_change >= threshold or daily_change <= -threshold):
                 should_notify = False
                 # Check if not notified today
                 if last_notify_date_obj is None or last_notify_date_obj < today_utc:
                     should_notify = True
                 if should_notify:
-                    if daily_change >= DAILY_CHANGE_THRESHOLD:
-                        notify_event(ticker, f"Price increase >{DAILY_CHANGE_THRESHOLD}% today", row, mailing_emails)
-                    elif daily_change <= -DAILY_CHANGE_THRESHOLD:
-                        notify_event(ticker, f"Price decrease >{DAILY_CHANGE_THRESHOLD}% today", row, mailing_emails)
+                    percent_str = f"{abs(daily_change):.2f}%"
+                    if daily_change >= threshold:
+                        notify_event(ticker, f"Price increase >{percent_str} (close: {price_str})", row, mailing_emails)
+                    elif daily_change <= -threshold:
+                        notify_event(ticker, f"Price decrease >{percent_str} (close: {price_str})", row, mailing_emails)
                     try:
                         supabase.table('stock_watchlist').update({
                             'notified_daily_change': True,
                             'last_daily_notify_date': str(today_utc)
                         }).eq('ticker', ticker).execute()
                     except Exception as e:
-                        print(f"Error updating notified_daily_change for {ticker}: {e}")
+                        log_event("ERROR", "Failed to update daily notification flags", ticker=ticker, error=str(e))
     except Exception as e:
-        print(f"Error processing {ticker}: {e}")
+        log_event("ERROR", "Unhandled error during row processing", ticker=ticker, error=str(e))
 
 def main():
     mailing_emails = fetch_mailing_emails()
