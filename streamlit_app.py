@@ -124,7 +124,7 @@ def delete_stock(selected_ticker, supabase):
     supabase.table("stock_watchlist").delete().eq("ticker", selected_ticker).execute()
 
 def main():
-    st.set_page_config(page_title="Investia Stock Alert", layout="wide")
+    st.set_page_config(page_title="Investia Stock Alert", page_icon="investia_favicon.png", layout="wide")
     display_header()
     st.markdown("")
     st.markdown(
