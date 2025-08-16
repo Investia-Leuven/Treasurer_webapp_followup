@@ -148,7 +148,8 @@ def main():
             else:
                 hist = ticker_info.history(period="1d")
                 if not hist.empty:
-                    st.success(f"{ticker} is a valid ticker symbol.")
+                    current_price = ticker_info.info.get("regularMarketPrice")
+                    st.success(f"{ticker} is a valid ticker symbol. Current price: ${current_price:,.2f}")
                 else:
                     log_event("WARN", "No sufficient historical data", ticker=ticker)
                     st.warning("Ticker not found. Please enter a valid ticker symbol.")
