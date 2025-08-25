@@ -149,6 +149,11 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
         last_daily_notify_date = row.get('last_daily_notify_date')
         # Compute today's date in UTC
         today_utc = now_utc.date()
+        # Check if the latest market close date is today to avoid duplicate notifications on non-trading days
+        latest_price_date = hist.index[-1].date()
+        if latest_price_date < today_utc:
+            log_event("INFO", "Skipping daily change check - market data not updated", ticker=ticker)
+            return
         # Parse last_daily_notify_date if present
         last_notify_date_obj = None
         if last_daily_notify_date:
