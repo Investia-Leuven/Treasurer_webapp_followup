@@ -31,7 +31,7 @@ def send_email(to_email, subject, body):
         log_event("ERROR", f"Failed to send email to {to_email}", error=str(e))
 
 def notify_event(ticker, event_message, row, mailing_emails):
-    subject = f"!! Check {ticker} | Investia bot"
+    subject = f"! Check {ticker} | Investia bot"
     bear_price = row.get('bear_price')
     bau_price = row.get('bau_price')
     bull_price = row.get('bull_price')
