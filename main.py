@@ -4,7 +4,7 @@ import yfinance as yf
 import smtplib
 from email.mime.text import MIMEText
 from supabase import create_client
-from datetime import datetime, timezone
+from datetime import datetime, timezone, time
 import json
 from config import SUPABASE_URL, SUPABASE_KEY, EMAIL_USER, EMAIL_PASS, DAILY_CHANGE_THRESHOLD, SMTP_HOST, SMTP_PORT
 from email_template import prepare_email_body
@@ -161,8 +161,21 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
                 last_notify_date_obj = datetime.fromisoformat(str(last_daily_notify_date)).date()
             except Exception:
                 last_notify_date_obj = None
-        # Reset notified_daily_change if last_daily_notify_date < today
-        if last_notify_date_obj and last_notify_date_obj < today_utc and notified_daily_change:
+        # Reset notified_daily_change only on trading days and after market open (default 13:30 UTC)
+        try:
+            open_hour = int(os.getenv("MARKET_OPEN_HOUR_UTC", "13"))
+            open_minute = int(os.getenv("MARKET_OPEN_MINUTE_UTC", "30"))
+        except Exception:
+            open_hour, open_minute = 13, 30
+
+        weekday = now_utc.weekday()  # Monday=0 ... Sunday=6
+        # Determine if current time is at/after the configured market open in UTC
+        after_open = (now_utc.hour > open_hour) or (now_utc.hour == open_hour and now_utc.minute >= open_minute)
+        is_weekend = weekday >= 5  # 5=Saturday, 6=Sunday
+        can_reset_today = (not is_weekend) and after_open
+
+        # Do NOT reset on Saturday/Sunday or before market open (esp. early Monday runs)
+        if last_notify_date_obj and last_notify_date_obj < today_utc and notified_daily_change and can_reset_today:
             try:
                 supabase.table('stock_watchlist').update({'notified_daily_change': False}).eq('ticker', ticker).execute()
                 notified_daily_change = False
