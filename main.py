@@ -9,6 +9,11 @@ import json
 from config import SUPABASE_URL, SUPABASE_KEY, EMAIL_USER, EMAIL_PASS, DAILY_CHANGE_THRESHOLD, SMTP_HOST, SMTP_PORT
 from email_template import prepare_email_body
 
+def log_event(level, message, **context):
+    log = {"level": level, "message": message}
+    log.update(context)
+    print(json.dumps(log))
+
 # --- runtime signature to prove which code ran ---
 def _compute_file_sig():
     import hashlib, pathlib
