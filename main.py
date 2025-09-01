@@ -9,15 +9,22 @@ import json
 from config import SUPABASE_URL, SUPABASE_KEY, EMAIL_USER, EMAIL_PASS, DAILY_CHANGE_THRESHOLD, SMTP_HOST, SMTP_PORT
 from email_template import prepare_email_body
 
-def log_event(level, message, **context):
-    log = {"level": level, "message": message}
-    log.update(context)
-    print(json.dumps(log))
+# --- runtime signature to prove which code ran ---
+def _compute_file_sig():
+    import hashlib, pathlib
+    try:
+        p = pathlib.Path(__file__)
+        return hashlib.sha256(p.read_bytes()).hexdigest()[:12]
+    except Exception:
+        return "unknown"
+# -------------------------------------------------
 
 # Initialize Supabase client
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def send_email(to_email, subject, body):
+    log_event("INFO", "Preparing to send email", to=to_email, subject=subject)
+    log_event("INFO", "Email subject in use", subject=subject, file_sig=_compute_file_sig(), github_sha=os.getenv("GITHUB_SHA"))
     msg = MIMEText(body, "html")
     msg['Subject'] = subject
     msg['From'] = EMAIL_USER
@@ -27,6 +34,7 @@ def send_email(to_email, subject, body):
             server.starttls()
             server.login(EMAIL_USER, EMAIL_PASS)
             server.sendmail(EMAIL_USER, [to_email], msg.as_string())
+            log_event("INFO", "Email sent", to=to_email, subject=subject)
     except Exception as e:
         log_event("ERROR", f"Failed to send email to {to_email}", error=str(e))
 
@@ -131,9 +139,29 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
         if hist.empty or len(hist) < 2:
             log_event("WARN", "No sufficient historical data", ticker=ticker)
             return
-        last_close = hist['Close'][-1]
+        last_close = hist['Close'].iloc[-1]
         price_str = f"{last_close:,.2f}"
-        previous_close = hist['Close'][-2]
+        previous_close = hist['Close'].iloc[-2]
+
+        # --- Global market-day/open guard (applies to all notifications) ---
+        today_utc = now_utc.date()
+        latest_price_date = hist.index[-1].date()
+        if latest_price_date < today_utc:
+            log_event("INFO", "GUARD:data-not-updated", ticker=ticker,
+                      latest_price_date=str(latest_price_date), today=str(today_utc))
+            return
+        try:
+            open_hour = int(os.getenv("MARKET_OPEN_HOUR_UTC", "13"))
+            open_minute = int(os.getenv("MARKET_OPEN_MINUTE_UTC", "30"))
+        except Exception:
+            open_hour, open_minute = 13, 30
+        after_open = (now_utc.hour > open_hour) or (now_utc.hour == open_hour and now_utc.minute >= open_minute)
+        is_weekend = now_utc.weekday() >= 5
+        if is_weekend or not after_open:
+            log_event("INFO", "GUARD:market-closed", ticker=ticker,
+                      weekday=now_utc.weekday(), after_open=after_open)
+            return
+
         # Check bear threshold
         if bear_price is not None and last_close <= bear_price and not notified_bear:
             notify_event(ticker, f"Bear case hit (close: {price_str})", row, mailing_emails)
@@ -144,16 +172,10 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
             supabase.table('stock_watchlist').update({'notified_bull': True}).eq('ticker', ticker).execute()
 
         # --- Begin new daily change notification logic ---
+        # Reuse today_utc from the global guard above
         # Get notified_daily_change and last_daily_notify_date from row
         notified_daily_change = row.get('notified_daily_change', False)
         last_daily_notify_date = row.get('last_daily_notify_date')
-        # Compute today's date in UTC
-        today_utc = now_utc.date()
-        # Check if the latest market close date is today to avoid duplicate notifications on non-trading days
-        latest_price_date = hist.index[-1].date()
-        if latest_price_date < today_utc:
-            log_event("INFO", "Skipping daily change check - market data not updated", ticker=ticker)
-            return
         # Parse last_daily_notify_date if present
         last_notify_date_obj = None
         if last_daily_notify_date:
@@ -212,6 +234,22 @@ def main():
     mailing_emails = fetch_mailing_emails()
     rows, updated_at_exists = fetch_watchlist()
     now_utc = datetime.now(timezone.utc)
+    # Log a startup marker so we can verify exactly which code ran inside Actions
+    try:
+        open_hour = int(os.getenv("MARKET_OPEN_HOUR_UTC", "13"))
+        open_minute = int(os.getenv("MARKET_OPEN_MINUTE_UTC", "30"))
+    except Exception:
+        open_hour, open_minute = 13, 30
+    log_event(
+        "INFO",
+        "Startup marker",
+        file_sig=_compute_file_sig(),
+        github_sha=os.getenv("GITHUB_SHA"),
+        utc_now=str(now_utc),
+        weekday=now_utc.weekday(),
+        market_open_hour_utc=open_hour,
+        market_open_minute_utc=open_minute,
+    )
     for row in rows:
         process_row(row, mailing_emails, updated_at_exists, now_utc)
 
