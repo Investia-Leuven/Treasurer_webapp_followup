@@ -1,0 +1,38 @@
+name: Stock Alerts 2.0
+
+on:
+  schedule:
+    # Run every hour, Monday–Friday only
+    - cron: '0 * * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: stock-alerts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          clean: true
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - run: python main.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
