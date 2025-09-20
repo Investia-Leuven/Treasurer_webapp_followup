@@ -46,14 +46,14 @@ def display_header():
 
     col1, col2, col3 = st.columns([1, 6, 1])
     with col1:
-        st.image("logoinvestia.png", width=80)
+        st.image("extra/logoinvestia.png", width=80)
     with col2:
         st.markdown(
             "<div class='header-title'>Investia - Stock alert manager (bèta)</div>",
             unsafe_allow_html=True
         )
     with col3:
-        with open("investia_help.pdf", "rb") as pdf_file:
+        with open("extra/investia_help.pdf", "rb") as pdf_file:
             st.download_button("Info", pdf_file, file_name="Investia_Help.pdf", use_container_width=True)
 
 def display_footer():
@@ -124,7 +124,7 @@ def delete_stock(selected_ticker, supabase):
     supabase.table("stock_watchlist").delete().eq("ticker", selected_ticker).execute()
 
 def main():
-    st.set_page_config(page_title="Investia Stock Alert", page_icon="investia_favicon.png", layout="wide")
+    st.set_page_config(page_title="Investia Stock Alert", page_icon="extra/investia_favicon.png", layout="wide")
     display_header()
     st.markdown("")
     st.markdown(
