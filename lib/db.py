@@ -21,10 +21,10 @@ def insert_stock(ticker, bear, bau, bull, pro_list, contra_list, email, daily_ch
         "email": email,
         "daily_change_threshold": daily_change_threshold,
     }
-    supabase.table("stock_watchlist").insert(data).execute()
+    supabase.table("analyst_stock_watchlist").insert(data).execute()
 
 def get_all_stocks():
-    response = supabase.table("stock_watchlist").select("*").execute()
+    response = supabase.table("analyst_stock_watchlist").select("*").execute()
     df = pd.DataFrame(response.data)
     if not df.empty:
         df = df.loc[:, ~df.columns.str.contains('date|time|created_at', case=False)]
@@ -39,17 +39,17 @@ def get_all_stocks():
     return df
 
 def update_stock(selected_ticker, update_data):
-    supabase.table("stock_watchlist").update(update_data).eq("ticker", selected_ticker).execute()
+    supabase.table("analyst_stock_watchlist").update(update_data).eq("ticker", selected_ticker).execute()
 
 def delete_stock(selected_ticker):
-    supabase.table("stock_watchlist").delete().eq("ticker", selected_ticker).execute()
+    supabase.table("analyst_stock_watchlist").delete().eq("ticker", selected_ticker).execute()
 
 def check_ticker_exists(ticker):
-    res = supabase.table("stock_watchlist").select("ticker").eq("ticker", ticker).execute()
+    res = supabase.table("analyst_stock_watchlist").select("ticker").eq("ticker", ticker).execute()
     return bool(res.data)
 
 def fetch_mailing_list():
-    res = supabase.table("mailing_list").select("*").execute()
+    res = supabase.table("analyst_mailing_list").select("*").execute()
     df = pd.DataFrame(res.data)
     if not df.empty:
         df = df.loc[:, ~df.columns.str.contains('date|time|created_at', case=False)]
@@ -57,17 +57,17 @@ def fetch_mailing_list():
     return df
 
 def check_email_exists(email):
-    res = supabase.table("mailing_list").select("email").eq("email", email).execute()
+    res = supabase.table("analyst_mailing_list").select("email").eq("email", email).execute()
     return bool(res.data)
 
 def add_email_to_mailing_list(email):
-    supabase.table("mailing_list").insert({"email": email}).execute()
+    supabase.table("analyst_mailing_list").insert({"email": email}).execute()
 
 def delete_email_from_mailing_list(email):
-    supabase.table("mailing_list").delete().eq("email", email).execute()
+    supabase.table("analyst_mailing_list").delete().eq("email", email).execute()
 
 def reset_notified_flags(ticker):
-    supabase.table("stock_watchlist").update({
+    supabase.table("analyst_stock_watchlist").update({
         "notified_bear": False,
         "notified_bau": False,
         "notified_bull": False,
@@ -82,14 +82,14 @@ def update_notified_flags(ticker, bear=None, bau=None, bull=None):
     if bull is not None:
         update_data["notified_bull"] = bull
     if update_data:
-        supabase.table("stock_watchlist").update(update_data).eq("ticker", ticker).execute()
+        supabase.table("analyst_stock_watchlist").update(update_data).eq("ticker", ticker).execute()
 
 def fetch_mailing_emails():
-    res = supabase.table("mailing_list").select("email").execute()
+    res = supabase.table("analyst_mailing_list").select("email").execute()
     return [item["email"] for item in res.data]
 
 def fetch_watchlist():
-    response = supabase.table("stock_watchlist").select("*").execute()
+    response = supabase.table("analyst_stock_watchlist").select("*").execute()
     rows = response.data
     updated_at_exists = any("updated_at" in row for row in rows)
     return rows, updated_at_exists
