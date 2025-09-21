@@ -90,6 +90,8 @@ def fetch_mailing_emails():
 
 def fetch_watchlist():
     response = supabase.table("stock_watchlist").select("*").execute()
-    return response.data
+    rows = response.data
+    updated_at_exists = any("updated_at" in row for row in rows)
+    return rows, updated_at_exists
 
 supabase = get_supabase_client()
