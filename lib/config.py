@@ -11,4 +11,6 @@ EMAIL_PASS = os.environ.get('EMAIL_PASS')
 SMTP_HOST = 'smtp-auth.mailprotect.be'
 SMTP_PORT = 587
 
-DAILY_CHANGE_THRESHOLD = 0.1  # percentage threshold for daily change notifications
+DAILY_CHANGE_THRESHOLD = float(os.environ.get("DAILY_CHANGE_THRESHOLD", 4.0))
+MARKET_OPEN_HOUR_UTC = int(os.environ.get("MARKET_OPEN_HOUR_UTC", "13"))
+MARKET_OPEN_MINUTE_UTC = int(os.environ.get("MARKET_OPEN_MINUTE_UTC", "30"))
