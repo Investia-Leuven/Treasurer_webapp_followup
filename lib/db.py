@@ -73,14 +73,7 @@ def reset_notified_flags(ticker):
         "notified_bull": False,
     }).eq("ticker", ticker).execute()
 
-def update_notified_flags(ticker, bear=None, bau=None, bull=None):
-    update_data = {}
-    if bear is not None:
-        update_data["notified_bear"] = bear
-    if bau is not None:
-        update_data["notified_bau"] = bau
-    if bull is not None:
-        update_data["notified_bull"] = bull
+def update_notified_flags(ticker, update_data):
     if update_data:
         supabase.table("analyst_stock_watchlist").update(update_data).eq("ticker", ticker).execute()
 
