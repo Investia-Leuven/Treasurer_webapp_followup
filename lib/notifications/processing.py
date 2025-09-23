@@ -18,7 +18,7 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
     notified_bull = row.get('notified_bull')
     updated_at_str = row.get('updated_at') if updated_at_exists else None
 
-        # Reset stale flags if last update > 7 days
+    # Reset stale flags if last update > 7 days
     if updated_at_exists and updated_at_str:
         try:
             updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
@@ -29,7 +29,7 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
             if notified_bull and days_since_update > 7:
                 reset_fields['notified_bull'] = False
             if reset_fields:
-                reset_notified_flags(ticker, reset_fields)
+                update_notified_flags(ticker, reset_fields)
                 if 'notified_bear' in reset_fields:
                     notified_bear = False
                 if 'notified_bull' in reset_fields:
@@ -49,9 +49,9 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
 
         today_utc = now_utc.date()
         latest_price_date = hist.index[-1].date()
-        if latest_price_date < today_utc:
-            log_event("INFO", "Skipping notification due to outdated data", ticker=ticker)
-            return
+        # if latest_price_date < today_utc:
+        #     log_event("INFO", "Skipping notification due to outdated data", ticker=ticker)
+        #     return
 
         after_open = (now_utc.hour > MARKET_OPEN_HOUR_UTC) or (now_utc.hour == MARKET_OPEN_HOUR_UTC and now_utc.minute >= MARKET_OPEN_MINUTE_UTC)
         is_weekend = now_utc.weekday() >= 5
@@ -76,14 +76,12 @@ def process_row(row, mailing_emails, updated_at_exists, now_utc):
             except Exception:
                 last_notify_date_obj = None
 
-        weekday = now_utc.weekday()
-        after_open = (now_utc.hour > MARKET_OPEN_HOUR_UTC) or (now_utc.hour == MARKET_OPEN_HOUR_UTC and now_utc.minute >= MARKET_OPEN_MINUTE_UTC)
-        is_weekend = weekday >= 5
+        # reuse earlier computed after_open and is_weekend
         can_reset_today = (not is_weekend) and after_open
 
         if last_notify_date_obj and last_notify_date_obj < today_utc and notified_daily_change and can_reset_today:
             try:
-                reset_notified_flags(ticker, {'notified_daily_change': False})
+                update_notified_flags(ticker, {'notified_daily_change': False})
                 notified_daily_change = False
             except Exception as e:
                 log_event("ERROR", "Reset daily notification failed", ticker=ticker, error=str(e))
