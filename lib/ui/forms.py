@@ -26,9 +26,13 @@ def stock_input_form():
     if ticker:
         price = validate_ticker(ticker)
         if price is None:
-            st.warning("Ticker not found. Check Yahoo Finance format.")
+            log_event("WARN", "Ticker invalid or delisted", ticker=ticker)
+            st.warning(
+                "Ticker not found. Please enter a valid ticker symbol. "
+                "Yahoo Finance tickers can slightly deviate, use the same ticker format as on their website."
+            )
         else:
-            st.success(f"{ticker} valid. Current price: ${price:,.2f}")
+            st.success(f"{ticker} valid. Current price: {price:,.2f}")
 
     col_email, col_thresh = st.columns([3, 1])
     with col_email:

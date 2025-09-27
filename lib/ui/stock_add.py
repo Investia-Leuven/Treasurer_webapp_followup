@@ -17,20 +17,6 @@ def add_stock_section():
     if ticker.strip() != "":
         try:
             ticker_info = yf.Ticker(ticker)
-            if not ticker_info.info or ticker_info.info.get("regularMarketPrice") is None:
-                log_event("WARN", "Ticker invalid or delisted", ticker=ticker)
-                st.warning(
-                    "Ticker not found. Please enter a valid ticker symbol. "
-                    "Yahoo Finance tickers can slightly deviate, use the same ticker format as on their website."
-                )
-            else:
-                hist = ticker_info.history(period="1d")
-                if not hist.empty:
-                    current_price = ticker_info.info.get("regularMarketPrice")
-                    st.success(f"{ticker} is a valid ticker symbol. Current price: {current_price:,.2f}")
-                else:
-                    log_event("WARN", "No sufficient historical data", ticker=ticker)
-                    st.warning("Ticker not found. Please enter a valid ticker symbol.")
         except Exception as e:
             log_event("ERROR", "Unhandled error during row processing", ticker=ticker, error=str(e))
             st.error(f"Error validating ticker: {e}")
