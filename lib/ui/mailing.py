@@ -45,3 +45,4 @@ def mailing_list_section():
             if st.button("Delete Email"):
                 delete_email_from_mailing_list(email_to_delete)
                 st.warning(f"{email_to_delete} deleted from mailing list.")
+                st.rerun()
