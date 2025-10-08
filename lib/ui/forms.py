@@ -42,11 +42,11 @@ def stock_input_form():
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        bear = st.number_input("Bear Case (in USD)", value=0.0)
+        bear = st.number_input("Bear Case", value=0.0)
     with col2:
-        bau = st.number_input("Base Case (BAU) (in USD)", value=0.0)
+        bau = st.number_input("Base Case (BAU)", value=0.0)
     with col3:
-        bull = st.number_input("Bull Case (in USD)", value=0.0)
+        bull = st.number_input("Bull Case", value=0.0)
 
     st.write("**Investment Thesis**")
     pro_col, contra_col = st.columns(2)
